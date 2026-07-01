@@ -11,8 +11,8 @@ Chat em tempo real com múltiplos clientes via TCP, usando threads POSIX e semá
 ## Compilação
 
 ```bash
-gcc -pthread servidor.c -o servidor
-gcc -pthread cliente.c -o cliente
+gcc -pthread src/servidor.c -o servidor
+gcc -pthread src/cliente.c -o cliente
 ```
 
 ## Uso
