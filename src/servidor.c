@@ -9,23 +9,23 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-// ─── Configurações ───────────────────────────────────────────────────────────
+// Configurações
 
 #define MAX_CLIENTES   20
 #define TAM_BUFFER     20       // slots do buffer circular
 #define TAM_MSG        512      // tamanho máximo de uma mensagem
 
-// ─── Buffer compartilhado (produtor/consumidor) ───────────────────────────────
+// Buffer compartilhado (produtor/consumidor)
 
 char buffer[TAM_BUFFER][TAM_MSG];
 int head = 0;
 int tail = 0;
 
-sem_t sem_vazio;        // conta slots livres (inicia em TAM_BUFFER)
-sem_t sem_cheio;        // conta slots com dados (inicia em 0)
-pthread_mutex_t mutex_buffer = PTHREAD_MUTEX_INITIALIZER;
+sem_t semVazio;        // conta slots livres (inicia em TAM_BUFFER)
+sem_t semCheio;        // conta slots com dados (inicia em 0)
+pthread_mutex_t mutexBuffer = PTHREAD_MUTEX_INITIALIZER;
 
-// ─── Lista de clientes conectados ────────────────────────────────────────────
+// Lista de clientes conectados
 
 typedef struct {
     int fd;
@@ -33,93 +33,93 @@ typedef struct {
 } Cliente;
 
 Cliente clientes[MAX_CLIENTES];
-int num_clientes = 0;
-pthread_mutex_t mutex_lista = PTHREAD_MUTEX_INITIALIZER;
+int numClientes = 0;
+pthread_mutex_t mutexLista = PTHREAD_MUTEX_INITIALIZER;
 
-// ─── Protótipos ──────────────────────────────────────────────────────────────
+// Protótipos
 
-void  buffer_produzir(const char *msg);
-void  buffer_consumir(char *msg_out);
-void  lista_adicionar(int fd, const char *apelido);
-void  lista_remover(int fd);
+void  bufferProduzir(const char *msg);
+void  bufferConsumir(char *msgOut);
+void  listaAdicionar(int fd, const char *apelido);
+void  listaRemover(int fd);
 void  broadcast(const char *msg);
-char *montar_msg(const char *tipo, const char *conteudo, char *out, int out_len);
-void  parse_msg(const char *raw, char *tipo, char *conteudo);
-void *thread_consumidora(void *arg);
-void *thread_produtora(void *arg);
+char *montarMsg(const char *tipo, const char *conteudo, char *out, int outLen);
+void  parseMsg(const char *raw, char *tipo, char *conteudo);
+void *threadConsumidora(void *arg);
+void *threadProdutora(void *arg);
 
-// ─── Buffer: produzir ────────────────────────────────────────────────────────
+// Buffer: produzir
 
-void buffer_produzir(const char *msg) {
-    sem_wait(&sem_vazio);
-    pthread_mutex_lock(&mutex_buffer);
+void bufferProduzir(const char *msg) {
+    sem_wait(&semVazio);
+    pthread_mutex_lock(&mutexBuffer);
 
     strncpy(buffer[head], msg, TAM_MSG - 1);
     head = (head + 1) % TAM_BUFFER;
 
-    pthread_mutex_unlock(&mutex_buffer);
-    sem_post(&sem_cheio);
+    pthread_mutex_unlock(&mutexBuffer);
+    sem_post(&semCheio);
 }
 
-// ─── Buffer: consumir ────────────────────────────────────────────────────────
+// Buffer: consumir
 
-void buffer_consumir(char *msg_out) {
-    sem_wait(&sem_cheio);
-    pthread_mutex_lock(&mutex_buffer);
+void bufferConsumir(char *msgOut) {
+    sem_wait(&semCheio);
+    pthread_mutex_lock(&mutexBuffer);
 
-    strncpy(msg_out, buffer[tail], TAM_MSG - 1);
+    strncpy(msgOut, buffer[tail], TAM_MSG - 1);
     tail = (tail + 1) % TAM_BUFFER;
 
-    pthread_mutex_unlock(&mutex_buffer);
-    sem_post(&sem_vazio);
+    pthread_mutex_unlock(&mutexBuffer);
+    sem_post(&semVazio);
 }
 
-// ─── Lista: adicionar cliente ─────────────────────────────────────────────────
+// Lista: adicionar cliente
 
-void lista_adicionar(int fd, const char *apelido) {
-    pthread_mutex_lock(&mutex_lista);
-    if (num_clientes < MAX_CLIENTES) {
-        clientes[num_clientes].fd = fd;
-        strncpy(clientes[num_clientes].apelido, apelido, 63);
-        num_clientes++;
+void listaAdicionar(int fd, const char *apelido) {
+    pthread_mutex_lock(&mutexLista);
+    if (numClientes < MAX_CLIENTES) {
+        clientes[numClientes].fd = fd;
+        strncpy(clientes[numClientes].apelido, apelido, 63);
+        numClientes++;
     }
-    pthread_mutex_unlock(&mutex_lista);
+    pthread_mutex_unlock(&mutexLista);
 }
 
-// ─── Lista: remover cliente ───────────────────────────────────────────────────
+// Lista: remover cliente
 
-void lista_remover(int fd) {
-    pthread_mutex_lock(&mutex_lista);
-    for (int i = 0; i < num_clientes; i++) {
+void listaRemover(int fd) {
+    pthread_mutex_lock(&mutexLista);
+    for (int i = 0; i < numClientes; i++) {
         if (clientes[i].fd == fd) {
-            clientes[i] = clientes[num_clientes - 1];
-            num_clientes--;
+            clientes[i] = clientes[numClientes - 1];
+            numClientes--;
             break;
         }
     }
-    pthread_mutex_unlock(&mutex_lista);
+    pthread_mutex_unlock(&mutexLista);
 }
 
-// ─── Enviar mensagem para todos os clientes ───────────────────────────────────
+// Enviar mensagem para todos os clientes
 
 void broadcast(const char *msg) {
-    pthread_mutex_lock(&mutex_lista);
-    for (int i = 0; i < num_clientes; i++) {
+    pthread_mutex_lock(&mutexLista);
+    for (int i = 0; i < numClientes; i++) {
         send(clientes[i].fd, msg, strlen(msg), 0);
     }
-    pthread_mutex_unlock(&mutex_lista);
+    pthread_mutex_unlock(&mutexLista);
 }
 
-// ─── Montar string no protocolo bom|tipo|conteudo|eom ────────────────────────
+// Montar string no protocolo bom|tipo|conteudo|eom
 
-char *montar_msg(const char *tipo, const char *conteudo, char *out, int out_len) {
-    snprintf(out, out_len, "bom|%s|%s|eom", tipo, conteudo);
+char *montarMsg(const char *tipo, const char *conteudo, char *out, int outLen) {
+    snprintf(out, outLen, "bom|%s|%s|eom", tipo, conteudo);
     return out;
 }
 
-// ─── Extrair tipo e conteudo de uma string do protocolo ──────────────────────
+// Extrair tipo e conteudo de uma string do protocolo
 
-void parse_msg(const char *raw, char *tipo, char *conteudo) {
+void parseMsg(const char *raw, char *tipo, char *conteudo) {
     // formato esperado: bom|tipo|conteudo|eom
     tipo[0] = '\0';
     conteudo[0] = '\0';
@@ -137,23 +137,23 @@ void parse_msg(const char *raw, char *tipo, char *conteudo) {
     strncpy(conteudo, token, TAM_MSG - 1);
 }
 
-// ─── Thread consumidora (única, global) ──────────────────────────────────────
+// Thread consumidora (única, global)
 
-void *thread_consumidora(void *arg) {
-    char msg_buffer[TAM_MSG];
-    char msg_saida[TAM_MSG];
+void *threadConsumidora(void *arg) {
+    char msgBuffer[TAM_MSG];
+    char msgSaida[TAM_MSG];
 
     while (1) {
-        buffer_consumir(msg_buffer);
-        montar_msg("msg_servidor", msg_buffer, msg_saida, TAM_MSG);
-        broadcast(msg_saida);
+        bufferConsumir(msgBuffer);
+        montarMsg("msg_servidor", msgBuffer, msgSaida, TAM_MSG);
+        broadcast(msgSaida);
     }
     return NULL;
 }
 
-// ─── Thread produtora (uma por cliente) ──────────────────────────────────────
+// Thread produtora (uma por cliente)
 
-void *thread_produtora(void *arg) {
+void *threadProdutora(void *arg) {
     int fd = *((int *)arg);
     free(arg);
 
@@ -162,24 +162,24 @@ void *thread_produtora(void *arg) {
     char conteudo[TAM_MSG];
     char apelido[64] = "";
     char evento[TAM_MSG * 2];
-    char boas_vindas[TAM_MSG];
+    char boasVindas[TAM_MSG];
 
     // 1. Envia boas-vindas
-    montar_msg("msg_servidor", "Olá! Seja bem-vindo!", boas_vindas, TAM_MSG);
-    send(fd, boas_vindas, strlen(boas_vindas), 0);
+    montarMsg("msg_servidor", "Olá! Seja bem-vindo!", boasVindas, TAM_MSG);
+    send(fd, boasVindas, strlen(boasVindas), 0);
 
     // 2. Aguarda usuario_entra
     int n = recv(fd, raw, TAM_MSG - 1, 0);
     if (n <= 0) goto encerrar;
     raw[n] = '\0';
-    parse_msg(raw, tipo, conteudo);
+    parseMsg(raw, tipo, conteudo);
 
     if (strcmp(tipo, "usuario_entra") != 0) goto encerrar;
     strncpy(apelido, conteudo, 63);
-    lista_adicionar(fd, apelido);
+    listaAdicionar(fd, apelido);
 
     snprintf(evento, TAM_MSG, "%s entrou na sala de conversa.", apelido);
-    buffer_produzir(evento);
+    bufferProduzir(evento);
 
     // 3. Loop principal: recebe mensagens do cliente
     while (1) {
@@ -188,29 +188,29 @@ void *thread_produtora(void *arg) {
         if (n <= 0) {
             // desconexão abrupta
             snprintf(evento, TAM_MSG, "%s saiu da sala de conversa.", apelido);
-            buffer_produzir(evento);
+            bufferProduzir(evento);
             goto encerrar;
         }
         raw[n] = '\0';
-        parse_msg(raw, tipo, conteudo);
+        parseMsg(raw, tipo, conteudo);
 
         if (strcmp(tipo, "msg_cliente") == 0) {
             snprintf(evento, TAM_MSG * 2, "%s enviou: %s", apelido, conteudo);
-            buffer_produzir(evento);
+            bufferProduzir(evento);
         } else if (strcmp(tipo, "usuario_sai") == 0) {
             snprintf(evento, TAM_MSG, "%s saiu da sala de conversa.", apelido);
-            buffer_produzir(evento);
+            bufferProduzir(evento);
             goto encerrar;
         }
     }
 
 encerrar:
-    if (apelido[0] != '\0') lista_remover(fd);
+    if (apelido[0] != '\0') listaRemover(fd);
     close(fd);
     pthread_exit(NULL);
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// Main
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -220,8 +220,8 @@ int main(int argc, char *argv[]) {
     int porta = atoi(argv[1]);
 
     // Inicializa semáforos
-    sem_init(&sem_vazio, 0, TAM_BUFFER);
-    sem_init(&sem_cheio, 0, 0);
+    sem_init(&semVazio, 0, TAM_BUFFER);
+    sem_init(&semCheio, 0, 0);
 
     // Cria socket
     int serverfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -246,27 +246,27 @@ int main(int argc, char *argv[]) {
     printf("Servidor escutando na porta %d...\n", porta);
 
     // Cria thread consumidora (única, global)
-    pthread_t tid_consumidor;
-    pthread_create(&tid_consumidor, NULL, thread_consumidora, NULL);
-    pthread_detach(tid_consumidor);
+    pthread_t tidConsumidor;
+    pthread_create(&tidConsumidor, NULL, threadConsumidora, NULL);
+    pthread_detach(tidConsumidor);
 
     // Loop de accept: cria uma thread produtora por cliente
     while (1) {
         struct sockaddr_in client;
-        socklen_t client_len = sizeof(client);
-        int clientfd = accept(serverfd, (struct sockaddr *)&client, &client_len);
+        socklen_t clientLen = sizeof(client);
+        int clientfd = accept(serverfd, (struct sockaddr *)&client, &clientLen);
         if (clientfd == -1) { perror("accept"); continue; }
 
-        int *fd_ptr = malloc(sizeof(int));
-        *fd_ptr = clientfd;
+        int *fdPtr = malloc(sizeof(int));
+        *fdPtr = clientfd;
 
         pthread_t tid;
-        pthread_create(&tid, NULL, thread_produtora, fd_ptr);
+        pthread_create(&tid, NULL, threadProdutora, fdPtr);
         pthread_detach(tid);
     }
 
     close(serverfd);
-    sem_destroy(&sem_vazio);
-    sem_destroy(&sem_cheio);
+    sem_destroy(&semVazio);
+    sem_destroy(&semCheio);
     return EXIT_SUCCESS;
 }

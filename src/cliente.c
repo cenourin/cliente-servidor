@@ -13,46 +13,46 @@
 
 #define TAM_MSG 512
 
-// ─── Input atual do usuário (compartilhado com thread auxiliar) ───────────────
+// Input atual do usuário (compartilhado com thread auxiliar)
 
-char input_atual[TAM_MSG] = {0};
-pthread_mutex_t mutex_input = PTHREAD_MUTEX_INITIALIZER;
-sem_t sem_boas_vindas; // TA sinaliza após exibir boas-vindas
+char inputAtual[TAM_MSG] = {0};
+pthread_mutex_t mutexInput = PTHREAD_MUTEX_INITIALIZER;
+sem_t semBoasVindas; // TA sinaliza após exibir boas-vindas
 
 
-// ─── Modo raw do terminal ─────────────────────────────────────────────────────
+// Modo raw do terminal
 
-static struct termios termo_original;
+static struct termios termoOriginal;
 
-static void entrar_modo_raw(void) {
-    tcgetattr(STDIN_FILENO, &termo_original);
-    struct termios raw = termo_original;
+static void entrarModoRaw(void) {
+    tcgetattr(STDIN_FILENO, &termoOriginal);
+    struct termios raw = termoOriginal;
     raw.c_lflag &= ~(ECHO | ICANON);
     raw.c_cc[VMIN]  = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
-static void restaurar_terminal(void) {
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &termo_original);
+static void restaurarTerminal(void) {
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &termoOriginal);
 }
 
-// ─── Protótipos ──────────────────────────────────────────────────────────────
+// Protótipos
 
-char *montar_msg(const char *tipo, const char *conteudo, char *out, int out_len);
-void  parse_conteudo(const char *raw, char *conteudo);
-void *thread_auxiliar(void *arg);
+char *montarMsg(const char *tipo, const char *conteudo, char *out, int outLen);
+void  parseConteudo(const char *raw, char *conteudo);
+void *threadAuxiliar(void *arg);
 
-// ─── Montar string no protocolo bom|tipo|conteudo|eom ────────────────────────
+// Montar string no protocolo bom|tipo|conteudo|eom
 
-char *montar_msg(const char *tipo, const char *conteudo, char *out, int out_len) {
-    snprintf(out, out_len, "bom|%s|%s|eom", tipo, conteudo);
+char *montarMsg(const char *tipo, const char *conteudo, char *out, int outLen) {
+    snprintf(out, outLen, "bom|%s|%s|eom", tipo, conteudo);
     return out;
 }
 
-// ─── Extrair apenas o conteudo de uma mensagem do protocolo ──────────────────
+// Extrair apenas o conteudo de uma mensagem do protocolo
 
-void parse_conteudo(const char *raw, char *conteudo) {
+void parseConteudo(const char *raw, char *conteudo) {
     conteudo[0] = '\0';
 
     char copia[TAM_MSG];
@@ -67,9 +67,9 @@ void parse_conteudo(const char *raw, char *conteudo) {
     strncpy(conteudo, token, TAM_MSG - 1);
 }
 
-// ─── Thread auxiliar: recebe mensagens do servidor e imprime na tela ─────────
+// Thread auxiliar: recebe mensagens do servidor e imprime na tela
 
-void *thread_auxiliar(void *arg) {
+void *threadAuxiliar(void *arg) {
     int sockfd = *((int *)arg);
     char raw[TAM_MSG];
     char conteudo[TAM_MSG];
@@ -79,36 +79,36 @@ void *thread_auxiliar(void *arg) {
     n = recv(sockfd, raw, TAM_MSG - 1, 0);
     if (n > 0) {
         raw[n] = '\0';
-        parse_conteudo(raw, conteudo);
+        parseConteudo(raw, conteudo);
         printf("[Servidor]: %s\n", conteudo);
         fflush(stdout);
     }
-    sem_post(&sem_boas_vindas); // libera TP para pedir apelido
+    sem_post(&semBoasVindas); // libera TP para pedir apelido
 
     // Mensagens seguintes: reimprime o que o usuário estava digitando
     while ((n = recv(sockfd, raw, TAM_MSG - 1, 0)) > 0) {
         raw[n] = '\0';
-        parse_conteudo(raw, conteudo);
+        parseConteudo(raw, conteudo);
 
-        pthread_mutex_lock(&mutex_input);
-        printf("\r\033[K[Servidor]: %s\n> %s", conteudo, input_atual);
+        pthread_mutex_lock(&mutexInput);
+        printf("\r\033[K[Servidor]: %s\n> %s", conteudo, inputAtual);
         fflush(stdout);
-        pthread_mutex_unlock(&mutex_input);
+        pthread_mutex_unlock(&mutexInput);
     }
 
     printf("\r\033[KConexão encerrada pelo servidor.\n");
     pthread_exit(NULL);
 }
 
-// ─── Lê uma linha do teclado em modo raw, mantendo input_atual atualizado ────
+// Lê uma linha do teclado em modo raw, mantendo inputAtual atualizado
 
-static int ler_linha(char *buf, int maxlen) {
+static int lerLinha(char *buf, int maxlen) {
     int len = 0;
     buf[0] = '\0';
 
-    pthread_mutex_lock(&mutex_input);
-    input_atual[0] = '\0';
-    pthread_mutex_unlock(&mutex_input);
+    pthread_mutex_lock(&mutexInput);
+    inputAtual[0] = '\0';
+    pthread_mutex_unlock(&mutexInput);
 
     int c;
     while ((c = getchar()) != EOF) {
@@ -120,19 +120,19 @@ static int ler_linha(char *buf, int maxlen) {
             if (len > 0) {
                 len--;
                 buf[len] = '\0';
-                pthread_mutex_lock(&mutex_input);
-                input_atual[len] = '\0';
-                pthread_mutex_unlock(&mutex_input);
+                pthread_mutex_lock(&mutexInput);
+                inputAtual[len] = '\0';
+                pthread_mutex_unlock(&mutexInput);
                 printf("\b \b");
                 fflush(stdout);
             }
         } else if (len < maxlen - 1) {
             buf[len++] = (char)c;
             buf[len]   = '\0';
-            pthread_mutex_lock(&mutex_input);
-            input_atual[len - 1] = (char)c;
-            input_atual[len]     = '\0';
-            pthread_mutex_unlock(&mutex_input);
+            pthread_mutex_lock(&mutexInput);
+            inputAtual[len - 1] = (char)c;
+            inputAtual[len]     = '\0';
+            pthread_mutex_unlock(&mutexInput);
             printf("%c", c);
             fflush(stdout);
         }
@@ -141,7 +141,7 @@ static int ler_linha(char *buf, int maxlen) {
     return len;
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// Main
 
 int main(void) {
     char ip[64];
@@ -173,45 +173,45 @@ int main(void) {
     }
 
     // 3. Cria TA imediatamente após conectar; ela exibe boas-vindas e sinaliza
-    sem_init(&sem_boas_vindas, 0, 0);
+    sem_init(&semBoasVindas, 0, 0);
     pthread_t tid;
-    pthread_create(&tid, NULL, thread_auxiliar, &sockfd);
+    pthread_create(&tid, NULL, threadAuxiliar, &sockfd);
 
     // 4. TP espera boas-vindas ser exibida, depois pede apelido
-    sem_wait(&sem_boas_vindas);
-    sem_destroy(&sem_boas_vindas);
+    sem_wait(&semBoasVindas);
+    sem_destroy(&semBoasVindas);
 
     printf("Seu apelido: ");
     fgets(apelido, sizeof(apelido), stdin);
     apelido[strcspn(apelido, "\n")] = '\0';
 
-    montar_msg("usuario_entra", apelido, msg, TAM_MSG);
+    montarMsg("usuario_entra", apelido, msg, TAM_MSG);
     send(sockfd, msg, strlen(msg), 0);
 
     // 5. Entra em modo raw para o loop de chat
-    entrar_modo_raw();
+    entrarModoRaw();
 
     // 6. Loop principal: lê do teclado e envia mensagens
     while (1) {
         printf("> ");
         fflush(stdout);
 
-        ler_linha(entrada, TAM_MSG);
+        lerLinha(entrada, TAM_MSG);
 
         if (strcmp(entrada, "tchau") == 0) {
-            montar_msg("usuario_sai", apelido, msg, TAM_MSG);
+            montarMsg("usuario_sai", apelido, msg, TAM_MSG);
             send(sockfd, msg, strlen(msg), 0);
             break;
         }
 
         if (entrada[0] == '\0') continue;
 
-        montar_msg("msg_cliente", entrada, msg, TAM_MSG);
+        montarMsg("msg_cliente", entrada, msg, TAM_MSG);
         send(sockfd, msg, strlen(msg), 0);
     }
 
     // 7. Encerra conexão e aguarda thread auxiliar
-    restaurar_terminal();
+    restaurarTerminal();
     close(sockfd);
     pthread_join(tid, NULL);
 
