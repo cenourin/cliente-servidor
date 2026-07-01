@@ -1,0 +1,75 @@
+========================================
+  Chat Multicliente em C — Instruções
+  IFG Campus Anápolis — Sistemas Operacionais
+========================================
+
+Alunos:
+  - Bruno Silveira
+  - Luis Felipe Gomes
+
+----------------------------------------
+COMPILAÇÃO
+----------------------------------------
+
+Compilar o servidor:
+  gcc -pthread src/servidor.c -o servidor
+
+Compilar o cliente:
+  gcc -pthread src/cliente.c -o cliente
+
+----------------------------------------
+EXECUÇÃO
+----------------------------------------
+
+1. Inicie o servidor informando a porta desejada:
+   ./servidor 8080
+
+2. Em outro terminal, inicie um cliente:
+   ./cliente
+
+3. O cliente pedirá:
+   - Endereço IP do servidor (ex: 127.0.0.1 para máquina local)
+   - Porta (ex: 8080)
+   - Apelido desejado para o chat
+
+4. Para conectar mais clientes, repita o passo 2 em novos terminais.
+
+5. Para sair do chat, digite:
+   tchau
+
+----------------------------------------
+CONFIGURAÇÃO DE REDE (máquinas diferentes)
+----------------------------------------
+
+Se servidor e cliente estiverem em máquinas diferentes na mesma rede:
+
+1. Descubra o IP da máquina do servidor:
+   ip addr show   (Linux)
+   ipconfig       (Windows)
+
+2. Certifique-se de que a porta escolhida não está bloqueada pelo firewall.
+   Para liberar no Linux:
+   sudo ufw allow 8080/tcp
+
+3. No cliente, informe o IP da máquina do servidor (não 127.0.0.1).
+
+----------------------------------------
+PROTOCOLO DE COMUNICAÇÃO
+----------------------------------------
+
+Todas as mensagens seguem o formato:
+  bom|tipo|conteudo|eom
+
+Tipos utilizados:
+  msg_servidor  — servidor → clientes (boas-vindas, eventos)
+  usuario_entra — cliente → servidor (informa apelido)
+  msg_cliente   — cliente → servidor (mensagem de chat)
+  usuario_sai   — cliente → servidor (desconexão voluntária)
+
+----------------------------------------
+OBSERVAÇÕES
+----------------------------------------
+
+- O servidor suporta até 20 clientes simultâneos (MAX_CLIENTES).
+- Desconexões abruptas (fechar o terminal) são tratadas automaticamente.
+- Para encerrar o servidor, use Ctrl+C.

@@ -11,7 +11,7 @@
 
 // ─── Configurações ───────────────────────────────────────────────────────────
 
-#define MAX_CLIENTES   10
+#define MAX_CLIENTES   20
 #define TAM_BUFFER     20       // slots do buffer circular
 #define TAM_MSG        512      // tamanho máximo de uma mensagem
 
